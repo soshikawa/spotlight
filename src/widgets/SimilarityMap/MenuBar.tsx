@@ -158,7 +158,7 @@ const SettingsMenu = ({
 };
 
 const MenuBar: FunctionComponent<Props> = (props) => {
-    const { onReset, filter, onChangeFilter } = props;
+    const { onReset, filter, onChangeFilter} = props;
 
     const toggleFilter = () => onChangeFilter(!filter);
 

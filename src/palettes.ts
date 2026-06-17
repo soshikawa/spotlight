@@ -18,6 +18,28 @@ const themeColors = {
     primary: chroma(twTheme('colors.blue.600') as unknown as string),
 };
 
+const LARGE_CATEGORICAL_PALETTE: string[] = Array.from({ length: 256 }, (_, i) => {
+    const goldenRatioConjugate = 0.618033988749895;
+    const hue = ((i * goldenRatioConjugate) % 1) * 360;
+    const saturation = 0.55 + (i % 3) * 0.1;   // slight variation
+    const lightness = 0.45 + (i % 2) * 0.1;     // slight variation
+    return chroma.hsl(hue, saturation, lightness).hex();
+});
+
+const largeCategoricalPalette: CategoricalPalette = {
+    name: 'Large256',
+    kind: 'categorical',
+    scale: () =>
+        chroma
+            .scale(LARGE_CATEGORICAL_PALETTE)
+            .nodata(NO_DATA)
+            .domain([0, LARGE_CATEGORICAL_PALETTE.length - 1])
+            .classes(LARGE_CATEGORICAL_PALETTE.length),
+    maxClasses: LARGE_CATEGORICAL_PALETTE.length,
+};
+
+
+
 const MPN65_PALETTE = [
     '377eb8',
     '66a61e',
@@ -536,6 +558,7 @@ export const categoricalPalettes = [
     set1Palette,
     set2Palette,
     set3Palette,
+    largeCategoricalPalette,
 ];
 export const categoricalPalettesByName = _.keyBy(categoricalPalettes, (p) => p.name);
 

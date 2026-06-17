@@ -43,6 +43,7 @@ class DataStore:
         self, data_source: DataSource, user_dtypes: spotlight_dtypes.DTypeMap
     ) -> None:
         self._embeddings = {}
+        self._computed_columns = {}
         self._data_source = data_source
         self._user_dtypes = user_dtypes
         self._update_dtypes()
@@ -64,7 +65,7 @@ class DataStore:
 
     @property
     def column_names(self) -> List[str]:
-        return self._data_source.column_names + list(self._embeddings)
+        return self._data_source.column_names + list(self._embeddings) + list(self._computed_columns)
 
     @property
     def data_source(self) -> DataSource:
@@ -88,6 +89,8 @@ class DataStore:
                 except StopIteration:
                     length = None
             dtypes_[column] = spotlight_dtypes.EmbeddingDType(length=length)
+        for column, (dtype, _) in self._computed_columns.items():
+            dtypes_[column] = dtype
         return dtypes_
 
     @property
@@ -111,6 +114,14 @@ class DataStore:
                 tags=[],
                 computed=True,
             )
+        elif column_name in self._computed_columns:
+            return ColumnMetadata(
+                nullable=False, 
+                editable=False,
+                hidden=False,
+                description=None,
+                tags=[],
+                computed=True)
         metadata = self._data_source.get_column_metadata(column_name)
         if spotlight_dtypes.is_unknown_dtype(
             self._data_source.intermediate_dtypes[column_name]
@@ -131,6 +142,9 @@ class DataStore:
             if embeddings is None:
                 raise ComputedColumnNotReady(column_name)
             normalized_values: Iterable = embeddings[indices]
+        elif column_name in self._computed_columns:
+            _, values = self._computed_columns[column_name]
+            normalized_values = values[indices]
         else:
             normalized_values = self._data_source.get_column_values(
                 column_name, indices
@@ -243,6 +257,10 @@ class DataStore:
                 length,
             )
         return user_dtype
+
+    def add_computed_column(
+        self, name: str, dtype: spotlight_dtypes.DType, values: np.ndarray) -> None:
+        self._computed_columns[name] = (dtype, values)
 
 
 def _guess_dtype_from_values(values: Iterable) -> Optional[spotlight_dtypes.DType]:

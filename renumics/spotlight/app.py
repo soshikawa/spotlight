@@ -13,6 +13,7 @@ from concurrent.futures import CancelledError, Future
 from pathlib import Path
 from threading import Thread
 from typing import Any, Dict, List, Literal, Optional, Union, cast
+import numpy as np
 
 import pandas as pd
 from fastapi import Cookie, FastAPI, Request, status
@@ -55,6 +56,7 @@ from renumics.spotlight.reporting import (
 )
 from renumics.spotlight.settings import settings
 from renumics.spotlight.typing import PathType
+from renumics.spotlight.backend.tasks.clustering import compute_hdbscan, compute_leiden, compute_evoc
 
 CURRENT_LAYOUT_KEY = "layout.current"
 
@@ -134,6 +136,9 @@ class SpotlightApp(FastAPI):
     # embedding
     embed_columns: Union[List[str], bool]
 
+    # clustering
+    cluster_column: Optional[str] = None
+
     def __init__(self) -> None:
         super().__init__()
         self.task_manager = TaskManager()
@@ -148,7 +153,11 @@ class SpotlightApp(FastAPI):
         self.issues = None
         self._custom_issues = []
         self.embed_columns = False
-
+        self.cluster = None
+        self.cluster_column = None
+        self.cluster_k = None
+        self.cluster_resolution = None
+        self.cluster_name = None
         self._dataset = None
         self._user_dtypes = {}
         self._data_source = None
@@ -203,6 +212,7 @@ class SpotlightApp(FastAPI):
 
         self.include_router(websocket.router, prefix="/api")
         self.include_router(plugin_api.router, prefix="/api/plugins")
+
 
         @self.exception_handler(Exception)
         async def _(request: Request, e: Exception) -> JSONResponse:
@@ -342,6 +352,13 @@ class SpotlightApp(FastAPI):
                 self.custom_issues = config.custom_issues
             if config.embed is not None:
                 self.embed_columns = config.embed
+            if config.cluster is not None:
+                self.cluster = config.cluster
+                self.cluster_column = config.cluster_col #added
+                self.cluster_k = config.cluster_k
+                self.cluster_resolution = config.cluster_resolution
+                self.cluster_name = config.cluster_name
+                #logger.info(f'cluster_column initialized: {self.cluster_column}')
             if config.dataset is not None:
                 self._dataset = config.dataset
                 self._data_source = create_datasource(self._dataset)
@@ -356,6 +373,8 @@ class SpotlightApp(FastAPI):
                     self._broadcast(RefreshMessage())
                     self._update_issues()
                     self._update_embeddings()
+                    if self.cluster_column is not None:
+                        self._update_clusters()
             if config.layout is not None:
                 if self._data_store is not None:
                     dataset_uid = self._data_store.uid
@@ -513,6 +532,169 @@ class SpotlightApp(FastAPI):
             self._broadcast(ColumnsUpdatedMessage(data=list(embedders.keys())))
 
         task.future.add_done_callback(_on_embeddings_ready)
+
+    def _update_clusters(self) -> None:
+        
+        if self._data_store is None:
+            return
+        # find first embedding column
+
+        #TODO: Fix to allow embedding column specification
+        embedding_columns = [
+            col for col, dtype in self._data_store.dtypes.items()
+            if spotlight_dtypes.is_embedding_dtype(dtype)
+        ]
+
+        if not embedding_columns:
+            return
+
+        column_name = embedding_columns[0]
+        indices = list(range(len(self._data_store)))
+
+        if self.cluster == 'leiden':
+            logger.info('leiden initiated')
+            task = self.task_manager.create_task(
+                compute_leiden,
+                (self._data_store, [column_name], indices),
+                kwargs={
+                    'k': self.cluster_k,
+                    'resolution': self.cluster_resolution,
+                },
+                name="cluster",
+            )
+        elif self.cluster == 'evoc':
+            logger.info('evoc initiated')
+            task = self.task_manager.create_task(
+                compute_evoc,
+                (self._data_store, [column_name], indices),
+                name="cluster",
+            )
+        elif self.cluster == 'hdbscan':
+            logger.info('hdbscan initiated')
+            task = self.task_manager.create_task(
+                compute_hdbscan,
+                (self._data_store, [column_name], indices),
+                name="cluster",
+            )
+        
+
+        def _on_cluster_done(future: Future) -> None:
+            if self._data_store is None:
+                return
+            try:
+                labels, valid_indices = future.result()
+            except CancelledError:
+                return
+            except Exception as e:
+                logger.error(f"Clustering failed: {e}")
+                return
+
+            '''
+            full_labels = np.full(len(self._data_store), -1, dtype=int)
+            full_labels[valid_indices] = labels
+            unique_labels = sorted(set(full_labels.tolist()))
+            
+            '''
+
+            #print(f'cluster_column = {self.cluster_column}')
+            #print(f'available columns = {self._data_source._df.columns.tolist()}')
+
+            labels = [label + 1 for label in labels]
+             #removes the -1 for outliers in hdbscan. for all other clustering methods, since they dont start at -1 it doesnt affect
+            full_labels = np.full(len(self._data_store), 0, dtype=int)
+            full_labels[valid_indices] = labels
+            unique_labels = sorted(set(full_labels.tolist()))
+
+            categories = []
+
+            #from transformers import AutoProcessor, AutoModelForImageTextToText
+
+            #model_id = "LiquidAI/LFM2.5-VL-450M"
+            #model = AutoModelForImageTextToText.from_pretrained(
+            #    model_id,
+            #    device_map="auto",
+            #    dtype="bfloat16"
+            #)
+
+            #processor = AutoProcessor.from_pretrained(model_id)
+
+            if self.cluster_name:
+                logger.info('clustering started')
+                import ollama
+                model = ollama.Client(
+                    host='http://localhost:11434',
+                    headers={'Authorization': 'Bearer ollama'}
+                )
+
+                for unique_label in unique_labels:
+                    label_idx = [] #stores all indices in cluster
+                    
+                    if unique_label == 0: 
+                        categories.append('Outliers')
+                        continue
+
+                    for i in range(len(full_labels)):
+                        if full_labels[i] == unique_label:
+                            label_idx.append(i)
+
+                    if len(label_idx) > 10:
+                        label_idx = np.array(label_idx)
+                        summary_idx = np.random.choice(label_idx, 10, replace=False)
+                    else:
+                        summary_idx = label_idx
+                    
+                    summary_messages = self._data_source.get_column_values(self.cluster_column, summary_idx)
+                    mess_type = self._user_dtypes[self.cluster_column]
+                    
+                    if mess_type == spotlight_dtypes.str_dtype:
+                        prompt = [{
+                            "role": "user",
+                            "content": f"Generate a common topic between the following texts in less than 5 words. Do not output anything else: {'/'.join(summary_messages)}"
+                        }]
+                    elif mess_type == spotlight_dtypes.image_dtype:
+                        prompt = [{
+                            "role": 'user',
+                            "content": f"Generate a one or two word summarization of the common topic between the following text: {', '.join(summary_messages)}"
+                        }] #TODO: FIX FOR IMAGES
+
+
+                    response = model.chat(model='llama3.2:3b', messages=prompt, think=False)['message']['content']
+                    #input = processor.apply_chat_template(
+                    #    prompt,
+                    #    add_generation_prompt=True,
+                    #    return_tensors="pt",
+                    #    return_dict=True,
+                    #    tokenize=True
+                    #).to(model.device)
+                    #outputs = model.generate(**input, max_new_tokens=20)
+                    #response = processor.batch_decode(outputs)[0]
+
+                    categories.append(response)
+
+                self._data_store.add_computed_column(
+                    "cluster", spotlight_dtypes.CategoryDType(categories), full_labels
+                )
+            else:
+                self._data_store.add_computed_column('cluster_id', spotlight_dtypes.int_dtype, full_labels)
+
+            '''
+            unique_labels = [label + 1 for label in unique_labels] 
+            categories = [str(label) for label in unique_labels]
+            label_to_idx = {categories[i]: i  for i in range(len(categories))}
+            categorical_labels = np.array([label_to_idx[str(l)] for l in full_labels], dtype=int)
+            
+            
+            
+            categories = ['Outliers' if label=='-1' else label for label in categories]
+            
+            self._data_store.add_computed_column(
+                "cluster", spotlight_dtypes.CategoryDType(categories), categorical_labels
+            )
+            '''
+            #self._broadcast(ColumnsUpdatedMessage(data=["cluster"]))
+            self._broadcast(RefreshMessage())
+
+        task.future.add_done_callback(_on_cluster_done)
 
     def _broadcast(self, message: Message) -> None:
         """

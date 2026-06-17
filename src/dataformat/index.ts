@@ -130,6 +130,7 @@ export function parse(
         case 'Mesh':
         case 'Video':
         case 'Sequence1D':
+        case 'datetime': // added
             return text;
         default:
             throw new Error(`Can't parse value of type: ${type.kind}`);

@@ -32,3 +32,10 @@ class AppConfig:
     # frontend
     layout: Optional[Layout] = None
     filebrowsing_allowed: Optional[bool] = None
+
+    # clustering
+    cluster: Optional[str] = None
+    cluster_col: str = 'text'
+    cluster_k: int = 15
+    cluster_resolution: float = 1.0
+    cluster_name: Optional[bool] = False

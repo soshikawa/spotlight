@@ -166,6 +166,11 @@ class Viewer:
         analyze: Optional[Union[List[str], bool]] = None,
         issues: Optional[Collection[DataIssue]] = None,
         embed: Optional[Union[List[str], bool]] = None,
+        cluster: Optional[str] = None,
+        cluster_col: Optional[str] = None,
+        cluster_k: int = 15,
+        cluster_resolution: float = 1.0,
+        cluster_name: Optional[bool] = False,
     ) -> None:
         """
         Show a dataset or folder in this spotlight viewer.
@@ -189,6 +194,7 @@ class Viewer:
             issues: Custom dataset issues displayed in the viewer.
             embed: Automatically embed all or given columns with default
                 embedders (disabled by default).
+            cluster: Column to cluster on.
         """
 
         self._df = None
@@ -226,6 +232,11 @@ class Viewer:
             embed=embed,
             layout=parsed_layout,
             filebrowsing_allowed=filebrowsing_allowed,
+            cluster=cluster,
+            cluster_col=cluster_col,
+            cluster_k=cluster_k,
+            cluster_resolution=cluster_resolution,
+            cluster_name=cluster_name,
         )
 
         if not self._server:
@@ -407,6 +418,11 @@ def show(
     analyze: Optional[Union[bool, List[str]]] = None,
     issues: Optional[Collection[DataIssue]] = None,
     embed: Optional[Union[List[str], bool]] = None,
+    cluster: Optional[str] = None,
+    cluster_col: Optional[str] = None,
+    cluster_k: int = 15,
+    cluster_resolution: float = 1.0,
+    cluster_name: Optional[bool] = False,
     ssl_keyfile: Optional[str] = None,
     ssl_certfile: Optional[str] = None,
     ssl_keyfile_password: Optional[str] = None,
@@ -466,6 +482,11 @@ def show(
         analyze=analyze,
         issues=issues,
         embed=embed,
+        cluster=cluster,
+        cluster_col=cluster_col,
+        cluster_k=cluster_k,
+        cluster_resolution=cluster_resolution,
+        cluster_name=cluster_name,
     )
     return viewer
 

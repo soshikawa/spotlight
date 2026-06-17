@@ -35,6 +35,40 @@ const numberFilters = {
     },
 };
 
+// Added to compare datetime
+const dateTimeFilters = {
+    equal: {
+        shorthand: '=',
+        compare: (value: string, ref: string) =>
+            new Date(value).getTime() === new Date(ref).getTime(),
+    },
+    unequal: {
+        shorthand: '!=',
+        compare: (value: string, ref: string) =>
+            new Date(value).getTime() !== new Date(ref).getTime(),
+    },
+    greater: {
+        shorthand: '>',
+        compare: (value: string, ref: string) =>
+            new Date(value).getTime() > new Date(ref).getTime(),
+    },
+    lesser: {
+        shorthand: '<',
+        compare: (value: string, ref: string) =>
+            new Date(value).getTime() < new Date(ref).getTime(),
+    },
+    greaterOrEqual: {
+        shorthand: '>=',
+        compare: (value: string, ref: string) =>
+            new Date(value).getTime() >= new Date(ref).getTime(),
+    },
+    lesserOrEqual: {
+        shorthand: '<=',
+        compare: (value: string, ref: string) =>
+            new Date(value).getTime() <= new Date(ref).getTime(),
+    },
+};
+
 const refFilters = {
     equal: {
         shorthand: '=',
@@ -66,6 +100,7 @@ function matchString(value: string, ref: string) {
 const predicatesByType: PredicateRegistry = {
     float: numberFilters,
     int: numberFilters,
+    datetime: dateTimeFilters, //added to compare datetime
     bool: {
         equal: {
             shorthand: '=',
